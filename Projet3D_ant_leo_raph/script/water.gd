@@ -51,17 +51,34 @@ func get_pose_on_wave(point: Vector3, time: float, max_iters := 4, alpha := 0.6,
 
 # Version pratique qui ne renvoie que la hauteur (float).
 func get_wave_height(point: Vector3, time: float, max_iters := 8, alpha := 0.6, eps := 1e-4) -> float:
-	return get_pose_on_wave(point, time, max_iters, alpha, eps).y
+        return get_pose_on_wave(point, time, max_iters, alpha, eps).y
 
 
 # ---- Fonctions de support ---------------------------------------------------
 
+func get_height_and_normal(world_point: Vector3, time: float = -1.0) -> Dictionary:
+        if time < 0.0:
+                time = Time.get_ticks_msec() / 1000.0
+
+        var local_point := to_local(world_point)
+        var local_pose := get_pose_on_wave(local_point, time)
+        var world_position := to_global(local_pose)
+
+        var local_normal := _get_wave_normal(local_point, time)
+        var world_normal := (global_transform.basis * local_normal).normalized()
+
+        return {
+                "height": world_position.y,
+                "position": world_position,
+                "normal": world_normal,
+        }
+
 # Position (Gerstner somme) pour un point (x,z) "plat"
 func get_point_position(point: Vector3, time: float) -> Vector3:
-	var pos := point
-	var origin_xz := Vector2(point.x, point.z)
+        var pos := point
+        var origin_xz := Vector2(point.x, point.z)
 
-	for i in range(wave_settings.wave_count):
+        for i in range(wave_settings.wave_count):
 		var d := wave_settings.direction[i].normalized()
 		var k := TAU / wave_settings.wavelength[i]
 		var w := sqrt(9.8 * k)
@@ -76,16 +93,32 @@ func get_point_position(point: Vector3, time: float) -> Vector3:
 		pos.z += Q * A * d.y * c
 		pos.y += A * s
 
-	return pos
+        return pos
 
 
 # ⚠️ Fonction DÉDIÉE : offset horizontal entre l’estimation (new_point) et la position déplacée (pos_on_wave)
 func get_wave_offset(new_point: Vector3, pos_on_wave: Vector3) -> Vector3:
-	return Vector3(
-		pos_on_wave.x - new_point.x,
-		0.0,
-		pos_on_wave.z - new_point.z
-	)
+        return Vector3(
+                pos_on_wave.x - new_point.x,
+                0.0,
+                pos_on_wave.z - new_point.z
+        )
+
+func _get_wave_normal(point: Vector3, time: float) -> Vector3:
+        var origin_xz := Vector2(point.x, point.z)
+        var grad := Vector2.ZERO
+
+        for i in range(wave_settings.wave_count):
+                var d := wave_settings.direction[i].normalized()
+                var k := TAU / wave_settings.wavelength[i]
+                var w := sqrt(9.8 * k)
+                var phi := k * d.dot(origin_xz) - w * time * wave_settings.speed[i]
+                var A := wave_settings.amplitude[i]
+
+                grad += d * (A * k * cos(phi))
+
+        var normal := Vector3(-grad.x, 1.0, -grad.y)
+        return normal.normalized()
 	
 func _process(delta):
 	var t = Time.get_ticks_msec() / 1000.0
